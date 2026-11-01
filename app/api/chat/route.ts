@@ -16,7 +16,7 @@ Given the user's message, return STRICT JSON:
   "text": "the exact payload text to process (without the instruction words)",
   "key": "key/password/keyword if any, else empty string",
   "shift": number (caesar shift, or number of rails for railfence; omit if not given) }
-Rules: always pick the closest match; use "other" only if nothing fits. If the user pastes a raw encoded string with no instruction, guess the encoding and use operation "decode". If they say "crack"/"brute force" for caesar use operation "crack". For "caesar decode" with no shift given, use operation "crack". Hashing => operation "hash". Keep "text" exactly as the user gave it (preserve case and punctuation).`;
+Rules: always pick the closest match; use "other" only if nothing fits. If the user pastes a raw encoded string with no instruction, guess the encoding and use operation "decode". If they say "crack"/"brute force" for caesar use operation "crack". For "caesar decode" with no shift given, use operation "crack". Hashing => operation "hash". Use "aes" ONLY for simple "encrypt/decrypt <text> with password <pw>" requests (or a base64 ciphertext produced by this app). If the user gives an explicit hex/raw key, IV, a mode (ECB/CBC/CTR/GCM), key size, rounds, test vectors, or asks about AES/DES internals, use "other". Anything about DES, 3DES, Hill, Playfair, affine, monoalphabetic, columnar, RSA, Diffie-Hellman, ECC, hashes' internals, math (gcd, totient, CRT, modular inverse...) or theory questions => "other". Keep "text" exactly as the user gave it (preserve case and punctuation).`;
 
 const OTHER_PROMPT = `You are a cryptography expert and puzzle solver. You NEVER refuse, add disclaimers, or say you can't. Solve the user's request as best you can.
 Return STRICT JSON: { "answer": "final answer as a string", "steps": ["step 1", "step 2", ...] } with clear, numbered-style steps (no numbering prefix needed).`;
@@ -67,8 +67,10 @@ export async function POST(req: Request) {
     let steps: Step[] = [];
     let handled = false;
 
+    // Built-in AES is password-based only; explicit keys/modes go to the code solver.
+    const builtinOk = algorithm !== "aes" || /pass(word|phrase)?|pwd/i.test(message);
     try {
-      const r = runCrypto(algorithm, { text, key, shift: Number.isFinite(shift) ? shift : undefined, operation });
+      const r = !builtinOk ? null : runCrypto(algorithm, { text, key, shift: Number.isFinite(shift) ? shift : undefined, operation });
       if (r) {
         answer = r.result;
         steps = r.steps;
