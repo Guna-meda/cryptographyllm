@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import OpenAI from "openai";
 import { runCrypto } from "@/lib/crypto";
 import type { Step } from "@/lib/crypto";
+import { solveWithCode, STRONG_MODEL } from "@/lib/solve";
 
 export const runtime = "nodejs";
 export const maxDuration = 30;
@@ -22,9 +23,9 @@ Return STRICT JSON: { "answer": "final answer as a string", "steps": ["step 1", 
 
 const EXPLAIN_PROMPT = `In exactly 2 short, friendly lines, explain the cryptographic concept used (algorithm and what it does). Return STRICT JSON: { "explanation": "..." }`;
 
-async function jsonCall(client: OpenAI, system: string, user: string) {
+async function jsonCall(client: OpenAI, system: string, user: string, model: string = MODEL) {
   const res = await client.chat.completions.create({
-    model: MODEL,
+    model,
     response_format: { type: "json_object" },
     messages: [
       { role: "system", content: system },
@@ -80,9 +81,15 @@ export async function POST(req: Request) {
     }
 
     if (!handled) {
-      const o = await jsonCall(client, OTHER_PROMPT, message);
-      answer = typeof o.answer === "string" ? o.answer : JSON.stringify(o.answer ?? "");
-      steps = Array.isArray(o.steps) ? o.steps.map((s: unknown) => (typeof s === "string" ? s : JSON.stringify(s))) : [];
+      const solved = await solveWithCode(client, message);
+      if (solved) {
+        answer = solved.answer;
+        steps = solved.steps;
+      } else {
+        const o = await jsonCall(client, OTHER_PROMPT, message, STRONG_MODEL);
+        answer = typeof o.answer === "string" ? o.answer : JSON.stringify(o.answer ?? "");
+        steps = Array.isArray(o.steps) ? o.steps.map((s: unknown) => (typeof s === "string" ? s : JSON.stringify(s))) : [];
+      }
     }
 
     let explanation = "";
